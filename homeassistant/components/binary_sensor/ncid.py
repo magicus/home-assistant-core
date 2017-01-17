@@ -5,6 +5,8 @@ For more details about this platform, please refer to the documentation at
 https://home-assistant.io/components/binary_sensor.ncid/
 """
 import logging
+import socket
+from threading import Thread
 
 import voluptuous as vol
 
@@ -33,11 +35,12 @@ EVENT_INCOMING_CALL = 'ncid.incoming_call'
 ATTR_NAME = "name"
 ATTR_NUMBER = "number"
 
+DEFAULT_HOST = 'localhost'
 DEFAULT_PORT = '3333'
 DEFAULT_NAME = 'Phone'
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
-    vol.Required(CONF_HOST): cv.string,
+    vol.Optional(CONF_HOST, default=DEFAULT_HOST): cv.string,
     vol.Optional(CONF_PORT, default=DEFAULT_PORT): cv.port,
     vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
 })
@@ -66,6 +69,9 @@ class NcidClient(BinarySensorDevice):
         self._last_number = None
         self._state = STATE_UNKNOWN
         self.update()
+
+        self._thread = Thread(target = self._run_thread)
+        self._thread.start()
 
     @property
     def icon(self):
@@ -108,6 +114,35 @@ class NcidClient(BinarySensorDevice):
 
         return attr
 
+    def _run_thread(self):
+        try:
+            sock = socket.create_connection((self._host, int(self._port)))
+        except ConnectionError as e:
+            _LOGGER.error("Cannot connect to NCID server %s:%s", name, number)
+            raise e
+        except Exception as e:
+            _LOGGER.error("Cannot connect to NCID server %s:%s", name, number)
+            raise e
+
+        # print("CONNECTED")
+        for line in sock.makefile():
+            # print("recieved line: {}".format(line))
+            try:
+                value = int(line[:3])
+                msg = line[3:]
+                # print("recieved code: {}, msg {}".format(value, msg))
+            except:
+                cmd, attr = self._parse_line(line)
+                name = attr['NAME']
+                if  name == '-' or name == 'NO NAME':
+                    name = None
+
+                number = attr['NMBR']
+                if  name == '-' or name == 'NO NAME':
+                    name = None
+
+        sock.close()
+
     def _incoming_call(self, name, number):
         _LOGGER.debug("NCID reports incoming call from %s (%s)", name, number)
         self._last_name = name
@@ -122,20 +157,21 @@ class NcidClient(BinarySensorDevice):
     def test_it(self):
         from pprint import pprint
         line = 'OUT: *DATE*01152017*TIME*0010*LINE*4901*NMBR*012345611*MESG*NONE*NAME*NO NAME*'
-        cmd, attr = self._parse_line(line)
-        print('cmd: {} for line: {}'.format(cmd, line))
+        attr = self._parse_line(line)
+        print('cmd: {} for line: {}'.format(attr['CMD'], line))
         pprint(attr)
         line = 'CIDINFO: *LINE*4901*RING*-2*TIME*00:11:01*'
-        self._parse_line(line)
-        print('cmd: {} for line: {}'.format(cmd, line))
+        attr = self._parse_line(line)
+        print('cmd: {} for line: {}'.format(attr['CMD'], line))
         pprint(attr)
         line = 'END: *HTYPE*BYE*DATE*01152017*TIME*0011*SCALL*01/15/2017 00:10:47*ECALL*01/15/2017 00:11:01*CTYPE*IN*LINE*4901*NMBR*0123456*NAME*NONAME*'
-        self._parse_line(line)
-        print('cmd: {} for line: {}'.format(cmd, line))
+        attr = self._parse_line(line)
+        print('cmd: {} for line: {}'.format(attr['CMD'], line))
         pprint(attr)
 
     def _parse_line(self, line):
         cmd, rest = line.split(':', 1)
         data = rest.strip().strip('*').split('*')
         attr = dict(zip(*[iter(data)] * 2))
-        return (cmd, attr)
+        attr['CMD'] = cmd
+        return attr

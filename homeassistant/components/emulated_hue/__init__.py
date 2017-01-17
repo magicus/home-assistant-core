@@ -17,7 +17,7 @@ from homeassistant.components.http import HomeAssistantWSGI
 import homeassistant.helpers.config_validation as cv
 from .hue_api import (
     HueUsernameView, HueAllLightsStateView, HueOneLightStateView,
-    HueOneLightChangeView)
+    HueOneLightChangeView, HueUserStateView)
 from .upnp import DescriptionXmlView, UPNPResponderThread
 
 DOMAIN = 'emulated_hue'
@@ -82,6 +82,7 @@ def setup(hass, yaml_config):
     server.register_view(HueAllLightsStateView(config))
     server.register_view(HueOneLightStateView(config))
     server.register_view(HueOneLightChangeView(config))
+    server.register_view(HueUserStateView(config))
 
     upnp_listener = UPNPResponderThread(
         config.host_ip_addr, config.listen_port)

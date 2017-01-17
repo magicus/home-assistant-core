@@ -33,7 +33,7 @@ class HueUsernameView(HomeAssistantView):
 
     url = '/api'
     name = 'emulated_hue:api:create_username'
-    extra_urls = ['/api/']
+    extra_urls = ['/api/', '/api/(null)']
     requires_auth = False
 
     @asyncio.coroutine
@@ -48,6 +48,13 @@ class HueUsernameView(HomeAssistantView):
             return self.json_message('devicetype not specified',
                                      HTTP_BAD_REQUEST)
 
+        return self.json([{'success': {'username': '12345678901234567890'}}])
+
+    @asyncio.coroutine
+    def get(self, request):
+        """Handle a GET request."""
+        # Normally a POST, not a GET is expected, but the Sleep Cycle app sends a
+        # "GET /api/(null)" request. Just send back a success response.
         return self.json([{'success': {'username': '12345678901234567890'}}])
 
 
@@ -66,15 +73,8 @@ class HueAllLightsStateView(HomeAssistantView):
     def get(self, request, username):
         """Process a request to get the list of available lights."""
         hass = request.app['hass']
-        json_response = {}
 
-        for entity in hass.states.async_all():
-            if self.config.is_entity_exposed(entity):
-                state, brightness = get_entity_state(self.config, entity)
-
-                number = self.config.entity_id_to_number(entity.entity_id)
-                json_response[number] = entity_to_json(
-                    entity, state, brightness)
+        json_response = all_entities_to_json(hass, self.config)
 
         return self.json(json_response)
 
@@ -237,6 +237,36 @@ class HueOneLightChangeView(HomeAssistantView):
         return self.json(json_response)
 
 
+class HueUserStateView(HomeAssistantView):
+    """Handle requests for getting the state visible to the user."""
+
+    url = '/api/{username}'
+    name = 'emulated_hue:user:state'
+    requires_auth = False
+
+    def __init__(self, config):
+        """Initialize the instance of the view."""
+        self.config = config
+
+    @core.callback
+    def get(self, request, username):
+        """Process a request to get the the state visible to the user."""
+        hass = request.app['hass']
+
+        lights_response = all_entities_to_json(hass, self.config)
+
+        # This is a simplified response which contains only the fields
+        # needed by the Sleep Cycle app. The app does not seem to be
+        # bothered by a faked mac address...
+        json_response = {
+            'config': {
+                "name": "Home Assistant",
+                "mac": "00:00:00:00:00:00"
+             },
+            'lights': lights_response }
+
+        return self.json(json_response)
+
 def parse_hue_api_put_light_body(request_json, entity):
     """Parse the body of a request to change the state of a light."""
     if HUE_API_STATE_ON in request_json:
@@ -326,6 +356,18 @@ def entity_to_json(entity, is_on=None, brightness=None):
         'swversion': '123'
     }
 
+
+def all_entities_to_json(hass, config):
+    """Create a JSON representation of all exposed entities."""
+    json_response = {}
+    for entity in hass.states.async_all():
+        if config.is_entity_exposed(entity):
+            state, brightness = get_entity_state(config, entity)
+
+            number = config.entity_id_to_number(entity.entity_id)
+            json_response[number] = entity_to_json(
+                entity, state, brightness)
+    return json_response
 
 def create_hue_success_response(entity_id, attr, value):
     """Create a success response for an attribute set on a light."""

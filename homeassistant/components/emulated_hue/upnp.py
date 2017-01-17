@@ -43,7 +43,7 @@ class DescriptionXmlView(HomeAssistantView):
 <modelName>Philips hue bridge 2015</modelName>
 <modelNumber>BSB002</modelNumber>
 <modelURL>http://www.meethue.com</modelURL>
-<serialNumber>1234</serialNumber>
+<serialNumber>HomeAssistant</serialNumber>
 <UDN>uuid:2f402f80-da50-11e1-9b23-001788255acc</UDN>
 </device>
 </root>

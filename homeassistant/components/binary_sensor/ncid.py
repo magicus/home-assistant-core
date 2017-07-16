@@ -70,6 +70,7 @@ class NcidClient(BinarySensorDevice):
         self._state = STATE_UNKNOWN
         self.update()
 
+        # FIXME: Use hass.async_add_job ?
         self._thread = Thread(target = self._run_thread)
         self._thread.start()
 
@@ -101,14 +102,14 @@ class NcidClient(BinarySensorDevice):
     @property
     def state(self):
         # FIXME: HACK: Just testing...
-        self._incoming_call('test', '1234')
+        #self._incoming_call('test', '1234')
         """Return the state of this entity."""
         return self._state
 
     @property
-    def state_attributes(self):
+    def device_state_attributes(self):
         """Return device specific state attributes."""
-        attr = super(NcidClient, self).state_attributes
+        attr = {}
         attr[ATTR_NAME] = self._last_name
         attr[ATTR_NUMBER] = self._last_number
 
@@ -118,10 +119,10 @@ class NcidClient(BinarySensorDevice):
         try:
             sock = socket.create_connection((self._host, int(self._port)))
         except ConnectionError as e:
-            _LOGGER.error("Cannot connect to NCID server %s:%s", name, number)
+            _LOGGER.error("Cannot connect to NCID server %s:%s", self._host, self._port)
             raise e
         except Exception as e:
-            _LOGGER.error("Cannot connect to NCID server %s:%s", name, number)
+            _LOGGER.error("Cannot connect to NCID server %s:%s", self._host, self._port)
             raise e
 
         # print("CONNECTED")
@@ -138,6 +139,7 @@ class NcidClient(BinarySensorDevice):
                     name = None
 
                 number = attr['NMBR']
+                # FIXME: copy paste error for name/number
                 if  name == '-' or name == 'NO NAME':
                     name = None
 

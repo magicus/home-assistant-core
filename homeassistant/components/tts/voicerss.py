@@ -2,7 +2,7 @@
 Support for the voicerss speech service.
 
 For more details about this component, please refer to the documentation at
-https://home-assistant.io/components/tts/voicerss/
+https://home-assistant.io/components/tts.voicerss/
 """
 import asyncio
 import logging
@@ -15,7 +15,6 @@ from homeassistant.const import CONF_API_KEY
 from homeassistant.components.tts import Provider, PLATFORM_SCHEMA, CONF_LANG
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
-
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -83,18 +82,19 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 
 @asyncio.coroutine
 def async_get_engine(hass, config):
-    """Setup VoiceRSS speech component."""
+    """Set up VoiceRSS TTS component."""
     return VoiceRSSProvider(hass, config)
 
 
 class VoiceRSSProvider(Provider):
-    """VoiceRSS speech api provider."""
+    """The VoiceRSS speech API provider."""
 
     def __init__(self, hass, conf):
         """Init VoiceRSS TTS service."""
         self.hass = hass
         self._extension = conf[CONF_CODEC]
         self._lang = conf[CONF_LANG]
+        self.name = 'VoiceRSS'
 
         self._form_data = {
             'key': conf[CONF_API_KEY],
@@ -105,24 +105,23 @@ class VoiceRSSProvider(Provider):
 
     @property
     def default_language(self):
-        """Default language."""
+        """Return the default language."""
         return self._lang
 
     @property
     def supported_languages(self):
-        """List of supported languages."""
+        """Return list of supported languages."""
         return SUPPORT_LANGUAGES
 
     @asyncio.coroutine
-    def async_get_tts_audio(self, message, language):
-        """Load TTS from voicerss."""
+    def async_get_tts_audio(self, message, language, options=None):
+        """Load TTS from VoiceRSS."""
         websession = async_get_clientsession(self.hass)
         form_data = self._form_data.copy()
 
         form_data['src'] = message
         form_data['hl'] = language
 
-        request = None
         try:
             with async_timeout.timeout(10, loop=self.hass.loop):
                 request = yield from websession.post(
@@ -137,15 +136,11 @@ class VoiceRSSProvider(Provider):
 
                 if data in ERROR_MSG:
                     _LOGGER.error(
-                        "Error receive %s from voicerss.", str(data, 'utf-8'))
+                        "Error receive %s from VoiceRSS", str(data, 'utf-8'))
                     return (None, None)
 
-        except (asyncio.TimeoutError, aiohttp.errors.ClientError):
-            _LOGGER.error("Timeout for voicerss api.")
+        except (asyncio.TimeoutError, aiohttp.ClientError):
+            _LOGGER.error("Timeout for VoiceRSS API")
             return (None, None)
-
-        finally:
-            if request is not None:
-                yield from request.release()
 
         return (self._extension, data)

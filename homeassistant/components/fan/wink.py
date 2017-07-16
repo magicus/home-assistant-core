@@ -4,35 +4,41 @@ Support for Wink fans.
 For more details about this platform, please refer to the documentation at
 https://home-assistant.io/components/fan.wink/
 """
+import asyncio
 import logging
 
 from homeassistant.components.fan import (FanEntity, SPEED_HIGH,
                                           SPEED_LOW, SPEED_MEDIUM,
                                           STATE_UNKNOWN)
 from homeassistant.helpers.entity import ToggleEntity
-from homeassistant.components.wink import WinkDevice
+from homeassistant.components.wink import WinkDevice, DOMAIN
+
+DEPENDENCIES = ['wink']
 
 _LOGGER = logging.getLogger(__name__)
 
-SPEED_LOWEST = "lowest"
-SPEED_AUTO = "auto"
+SPEED_LOWEST = 'lowest'
+SPEED_AUTO = 'auto'
 
 
 def setup_platform(hass, config, add_devices, discovery_info=None):
-    """Setup the Wink platform."""
+    """Set up the Wink platform."""
     import pywink
 
-    add_devices(WinkFanDevice(fan, hass) for fan in pywink.get_fans())
+    for fan in pywink.get_fans():
+        if fan.object_id() + fan.name() not in hass.data[DOMAIN]['unique_ids']:
+            add_devices([WinkFanDevice(fan, hass)])
 
 
 class WinkFanDevice(WinkDevice, FanEntity):
     """Representation of a Wink fan."""
 
-    def __init__(self, wink, hass):
-        """Initialize the fan."""
-        WinkDevice.__init__(self, wink, hass)
+    @asyncio.coroutine
+    def async_added_to_hass(self):
+        """Callback when entity is added to hass."""
+        self.hass.data[DOMAIN]['entities']['fan'].append(self)
 
-    def set_drection(self: ToggleEntity, direction: str) -> None:
+    def set_direction(self: ToggleEntity, direction: str) -> None:
         """Set the direction of the fan."""
         self.wink.set_fan_direction(direction)
 

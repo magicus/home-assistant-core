@@ -25,7 +25,7 @@ class AiohttpClientMocker:
                 content=None,
                 json=None,
                 params=None,
-                headers=None,
+                headers={},
                 exc=None,
                 cookies=None):
         """Mock a request."""
@@ -37,11 +37,9 @@ class AiohttpClientMocker:
             content = b''
         if params:
             url = str(yarl.URL(url).with_query(params))
-        if cookies:
-            self._cookies.update(cookies)
 
         self._mocks.append(AiohttpClientMockResponse(
-            method, url, status, content, exc))
+            method, url, status, content, cookies, exc, headers))
 
     def get(self, *args, **kwargs):
         """Register a mock get request."""
@@ -65,12 +63,8 @@ class AiohttpClientMocker:
 
     @property
     def call_count(self):
-        """Number of requests made."""
+        """Return the number of requests made."""
         return len(self.mock_calls)
-
-    def filter_cookies(self, host):
-        """Return hosts cookies."""
-        return self._cookies
 
     def clear_requests(self):
         """Reset mock calls."""
@@ -79,9 +73,12 @@ class AiohttpClientMocker:
         self.mock_calls.clear()
 
     @asyncio.coroutine
+    # pylint: disable=unused-variable
     def match_request(self, method, url, *, data=None, auth=None, params=None,
-                      headers=None):  # pylint: disable=unused-variable
+                      headers=None, allow_redirects=None, timeout=None,
+                      json=None):
         """Match a request against pre-registered requests."""
+        data = data or json
         for response in self._mocks:
             if response.match_request(method, url, params):
                 self.mock_calls.append((method, url, data))
@@ -97,7 +94,8 @@ class AiohttpClientMocker:
 class AiohttpClientMockResponse:
     """Mock Aiohttp client response."""
 
-    def __init__(self, method, url, status, response, exc=None):
+    def __init__(self, method, url, status, response, cookies=None, exc=None,
+                 headers={}):
         """Initialize a fake response."""
         self.method = method
         self._url = url
@@ -106,6 +104,27 @@ class AiohttpClientMockResponse:
         self.status = status
         self.response = response
         self.exc = exc
+
+        self._headers = headers
+        self._cookies = {}
+
+        if cookies:
+            for name, data in cookies.items():
+                cookie = mock.MagicMock()
+                cookie.value = data
+                self._cookies[name] = cookie
+
+        if isinstance(response, list):
+            self.content = mock.MagicMock()
+
+            @asyncio.coroutine
+            def read(*argc, **kwargs):
+                """Read content stream mock."""
+                if self.response:
+                    return self.response.pop()
+                return None
+
+            self.content.read = read
 
     def match_request(self, method, url, params=None):
         """Test if response answers request."""
@@ -140,6 +159,16 @@ class AiohttpClientMockResponse:
 
         return True
 
+    @property
+    def headers(self):
+        """Return content_type."""
+        return self._headers
+
+    @property
+    def cookies(self):
+        """Return dict of cookies."""
+        return self._cookies
+
     @asyncio.coroutine
     def read(self):
         """Return mock response."""
@@ -160,6 +189,10 @@ class AiohttpClientMockResponse:
         """Mock release."""
         pass
 
+    def close(self):
+        """Mock close."""
+        pass
+
 
 @contextmanager
 def mock_aiohttp_client():
@@ -172,7 +205,5 @@ def mock_aiohttp_client():
         for method in ('get', 'post', 'put', 'options', 'delete'):
             setattr(instance, method,
                     functools.partial(mocker.match_request, method))
-
-        instance.cookie_jar.filter_cookies = mocker.filter_cookies
 
         yield mocker

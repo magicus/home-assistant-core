@@ -133,7 +133,9 @@ class NcidClient(BinarySensorDevice):
                 msg = line[3:]
                 # print("recieved code: {}, msg {}".format(value, msg))
             except:
-                cmd, attr = self._parse_line(line)
+                attr = self._parse_line(line)
+
+                # print("parsed: {}".format(attr))
                 name = attr['NAME']
                 if  name == '-' or name == 'NO NAME':
                     name = None

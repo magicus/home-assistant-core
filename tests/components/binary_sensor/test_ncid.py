@@ -75,7 +75,10 @@ class TestNCIDBinarySensor(unittest.TestCase):
         self.hass = get_test_home_assistant()
         self.server = FakeNCIDServer((TEST_HOST, TEST_PORT))
         self.server.start()
-        #self.server.send('CIDINFO: *LINE*4901*RING*-2*TIME*00:11:01*')
+        self.server.send('CIDINFO: *LINE*4901*RING*-2*TIME*00:11:01*')
+        self.server.send('200 OK dokey')
+        self.server.send('END: *HTYPE*BYE*DATE*01152017*TIME*0011*SCALL*01/15/2017 00:10:47*ECALL*01/15/2017 00:11:01*CTYPE*IN*LINE*4901*NMBR*0123456*NAME*NONAME*')
+
         output = 'OUT: *DATE*01152017*TIME*0010*LINE*4901*NMBR*012345611*MESG*NONE*NAME*NO NAME*'
         self.server.send(output + 'CNT*1*')
         self.server.send(output + 'CNT*2*')

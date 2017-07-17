@@ -129,23 +129,39 @@ class NcidClient(BinarySensorDevice):
         for line in sock.makefile():
             # print("recieved line: {}".format(line))
             try:
-                value = int(line[:3])
-                msg = line[3:]
-                # print("recieved code: {}, msg {}".format(value, msg))
+                code = int(line[:3])
+                message = line[3:]
+
+                self._handle_error(code, message)
             except:
                 attr = self._parse_line(line)
-
-                # print("parsed: {}".format(attr))
-                name = attr['NAME']
-                if  name == '-' or name == 'NO NAME':
-                    name = None
-
-                number = attr['NMBR']
-                # FIXME: copy paste error for name/number
-                if  name == '-' or name == 'NO NAME':
-                    name = None
+                self._handle_message(attr)
 
         sock.close()
+
+    def _handle_error(self, code, message):
+        print("recieved code: {}, msg {}".format(code, message))
+
+    def _handle_message(self, attr):
+        from pprint import pprint
+
+        print("handling message: {}".format(attr))
+        pprint(attr)
+        if attr['CMD'] == 'OUT':
+            try:
+                name = attr['NAME']
+                if name == '-' or name == 'NO NAME':
+                    name = None
+            except:
+                name = None
+
+            try:
+                number = attr['NMBR']
+                # FIXME: copy paste error for name/number
+                if number == '-' or number == 'NO NMBR':
+                    number = None
+            except:
+                number = None
 
     def _incoming_call(self, name, number):
         _LOGGER.debug("NCID reports incoming call from %s (%s)", name, number)
@@ -157,21 +173,6 @@ class NcidClient(BinarySensorDevice):
                 ATTR_NAME: name,
                 ATTR_NUMBER: number
             })
-
-    def test_it(self):
-        from pprint import pprint
-        line = 'OUT: *DATE*01152017*TIME*0010*LINE*4901*NMBR*012345611*MESG*NONE*NAME*NO NAME*'
-        attr = self._parse_line(line)
-        print('cmd: {} for line: {}'.format(attr['CMD'], line))
-        pprint(attr)
-        line = 'CIDINFO: *LINE*4901*RING*-2*TIME*00:11:01*'
-        attr = self._parse_line(line)
-        print('cmd: {} for line: {}'.format(attr['CMD'], line))
-        pprint(attr)
-        line = 'END: *HTYPE*BYE*DATE*01152017*TIME*0011*SCALL*01/15/2017 00:10:47*ECALL*01/15/2017 00:11:01*CTYPE*IN*LINE*4901*NMBR*0123456*NAME*NONAME*'
-        attr = self._parse_line(line)
-        print('cmd: {} for line: {}'.format(attr['CMD'], line))
-        pprint(attr)
 
     def _parse_line(self, line):
         cmd, rest = line.split(':', 1)

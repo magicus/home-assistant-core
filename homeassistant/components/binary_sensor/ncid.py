@@ -126,6 +126,7 @@ class NcidClient(BinarySensorDevice):
             # If we lost the connection, re-establish it
             self._is_connected = True
             self._thread = Thread(target=self._run_thread)
+            self._thread.daemon = True
             self._thread.start()
 
     def _run_thread(self):
@@ -172,12 +173,15 @@ class NcidClient(BinarySensorDevice):
             # PID is same as CID, but used for certain smartphones
             name, number = self._get_caller_id(attr)
             self._state = STATE_IN_PROGRESS_INCOMING
+            self.schedule_update_ha_state(force_refresh=True)
             print (name, number)
 
         if attr['CMD'] == 'OUT':
             # Sent when placing an outgoing call, including 'callee' ID
             name, number = self._get_caller_id(attr)
             self._state = STATE_IN_PROGRESS_OUTGOING
+            self.schedule_update_ha_state(force_refresh=True)
+            print("outgoing")
             print (name, number)
 
         if attr['CMD'] == 'CIDINFO':
@@ -187,26 +191,30 @@ class NcidClient(BinarySensorDevice):
             if ring == 0:
                 # Call was answered
                 self._state = STATE_ON
+                self.schedule_update_ha_state(force_refresh=True)
             elif ring == -1:
                 # Call stopped ringing due to other end hanging up (CANCEL)
                 self._state = STATE_OFF
+                self.schedule_update_ha_state(force_refresh=True)
             elif ring == -2:
                 # Call has been terminated due to this side hanging up (BYE)
                 print("call is terminated")
                 self._state = STATE_OFF
+                self.schedule_update_ha_state(force_refresh=True)
             else:
                 # The incoming call is not answered, ring contains ring count.
                 if self._state != STATE_IN_PROGRESS_INCOMING:
                     _LOGGER.debug("NCID internal error: CIDINFO RING {} with no call in progress".format(ring))
                     self._state = STATE_IN_PROGRESS_INCOMING
+                    self.schedule_update_ha_state(force_refresh=True)
 
         if attr['CMD'] == 'END':
             # Sent after a call is completed
             name, number = self._get_caller_id(attr)
-            if self._state != STATE_ON:
+            if self._state != STATE_OFF:
                 _LOGGER.debug("NCID internal error: END with no prior CIDINFO/-X")
-
-            self._state = STATE_OFF
+                self._state = STATE_OFF
+                self.schedule_update_ha_state(force_refresh=True)
             hangup_reason = attr['HTYPE'] # BYE or CANCEL
             call_direction = attr['CTYPE'] # IN or OUT
             print (name, number)
@@ -214,12 +222,14 @@ class NcidClient(BinarySensorDevice):
         if attr['CMD'] == 'HUP':
             # Sent when ncid automatically hangs up (e.g. blacklisted) call
             self._state = STATE_OFF
+            self.schedule_update_ha_state(force_refresh=True)
             hangup_reason = ''
             call_direction = attr['CTYPE'] # IN or OUT
             print (name, number)
 
         if attr['CMD'] == 'MSG':
             _LOGGER.info("NCID general message: {}".format(attr['MSG']))
+            _LOGGER.info("NCID message attributes: {}".format(attr))
 
 
     def _get_caller_id(self, attr):
@@ -250,11 +260,15 @@ class NcidClient(BinarySensorDevice):
 
     def _parse_line(self, line):
         cmd, rest = line.split(':', 1)
+        msg = None
         if cmd == 'MSG' or cmd == '+MSG':
-            attr = { 'MSG': rest}
-        else:
-            data = rest.strip().strip('*').split('*')
-            attr = dict(zip(*[iter(data)] * 2))
+            # Extract the message part which is prepended to the key-value pairs.
+            msg, rest = rest[1:].split('**')
+
+        data = rest.strip().strip('*').split('*')
+        attr = dict(zip(*[iter(data)] * 2))
 
         attr['CMD'] = cmd
+        if msg:
+            attr['MSG'] = msg
         return attr

@@ -4,6 +4,8 @@ import socketserver
 import threading
 import unittest
 
+import time
+
 from homeassistant.components.binary_sensor import ncid
 from homeassistant.setup import setup_component
 import homeassistant.components.binary_sensor as binary_sensor
@@ -73,17 +75,17 @@ class TestNCIDBinarySensor(unittest.TestCase):
         self.hass = get_test_home_assistant()
         self.server = FakeNCIDServer((TEST_HOST, TEST_PORT))
         self.server.start()
-        self.server.send('200 Okey dokey')
-        self.server.send('CIDINFO: *LINE*4901*RING*-2*TIME*00:11:01*')
-        self.server.send('END: *HTYPE*BYE*DATE*01152017*TIME*0011*SCALL*01/15/2017 00:10:47*ECALL*01/15/2017 00:11:01*CTYPE*IN*LINE*4901*NMBR*0123456*NAME*NONAME*')
-        self.server.send('OUT: *DATE*01152017*TIME*0010*LINE*4901*NMBR*012345611*MESG*NONE*NAME*NO NAME*')
+        # self.server.send('200 Okey dokey')
+        # self.server.send('CIDINFO: *LINE*4901*RING*-2*TIME*00:11:01*')
+        # self.server.send('END: *HTYPE*BYE*DATE*01152017*TIME*0011*SCALL*01/15/2017 00:10:47*ECALL*01/15/2017 00:11:01*CTYPE*IN*LINE*4901*NMBR*0123456*NAME*NONAME*')
+        # self.server.send('OUT: *DATE*01152017*TIME*0010*LINE*4901*NMBR*012345611*MESG*NONE*NAME*NO NAME*')
 
     def tearDown(self):  # pylint: disable=invalid-name
         """Stop everything that was started."""
         self.server.stop()
         self.hass.stop()
 
-    def test_setup_platform_valid_config(self):
+    def test_1setup_platform_valid_config(self):
         """Check a valid configuration."""
         with assert_setup_component(1, binary_sensor.DOMAIN):
             assert setup_component(
@@ -97,8 +99,9 @@ class TestNCIDBinarySensor(unittest.TestCase):
 
         state = self.hass.states.get('binary_sensor.fake_ncid')
         self.assertEqual(ncid.STATE_UNKNOWN, state.state)
+        # self.assertEqual(ncid.STATE_UNKNOWN, False)
 
-    def test_ring_sensor_value(self):
+    def test_outgoing_call(self):
         """Test the default sensor value."""
         with assert_setup_component(1, binary_sensor.DOMAIN):
             assert setup_component(
@@ -106,6 +109,41 @@ class TestNCIDBinarySensor(unittest.TestCase):
 
         state = self.hass.states.get('binary_sensor.fake_ncid')
         self.assertEqual(ncid.STATE_UNKNOWN, state.state)
+
+        # Fake dialling outgoing call
         self.server.send('OUT: *DATE*01152017*TIME*0010*LINE*4901*NMBR*012345611*MESG*NONE*NAME*NO NAME*')
-        self.server.send('200 Okey dokey')
-        # self.assertEqual(ncid.STATE_IN_PROGRESS_OUTGOING, state.state)
+        # This is not ideal, but we need to make sure the new state has propagated
+        time.sleep(1)
+        state = self.hass.states.get('binary_sensor.fake_ncid')
+        self.assertEqual(ncid.STATE_IN_PROGRESS_OUTGOING, state.state)
+
+        # Fake remote party answering
+        self.server.send('CIDINFO: *LINE*4901*RING*0*TIME*00:11:01*')
+        time.sleep(1)
+        state = self.hass.states.get('binary_sensor.fake_ncid')
+        self.assertEqual(ncid.STATE_ON, state.state)
+
+        # Fake hangup
+        self.server.send('CIDINFO: *LINE*4901*RING*-2*TIME*00:11:01*')
+        time.sleep(1)
+        state = self.hass.states.get('binary_sensor.fake_ncid')
+        self.assertEqual(ncid.STATE_OFF, state.state)
+
+        # Fake call summary
+        self.server.send('END: *HTYPE*BYE*DATE*01152017*TIME*0011*SCALL*01/15/2017 00:10:47*ECALL*01/15/2017 00:11:01*CTYPE*OUT*LINE*4901*NMBR*0123456*NAME*NONAME*')
+        time.sleep(1)
+        state = self.hass.states.get('binary_sensor.fake_ncid')
+        self.assertEqual(ncid.STATE_OFF, state.state)
+
+    def test_server_message(self):
+        """Test the default sensor value."""
+        with assert_setup_component(1, binary_sensor.DOMAIN):
+            assert setup_component(
+                self.hass, binary_sensor.DOMAIN, TEST_CONFIG)
+
+        # Fake server message. Should be logged but ignored. Note the odd syntax.
+        self.server.send('MSG: This is just a drill.***DATE*01152017*TIME*0010*LINE*4901*NMBR*012345611*MTYPE*IN*NAME*NO NAME*')
+        # This is not ideal, but we need to make sure the new state has propagated
+        time.sleep(1)
+        state = self.hass.states.get('binary_sensor.fake_ncid')
+        self.assertEqual(ncid.STATE_UNKNOWN, state.state)

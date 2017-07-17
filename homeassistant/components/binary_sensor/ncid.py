@@ -18,17 +18,27 @@ from homeassistant.const import (
 import homeassistant.helpers.config_validation as cv
 
 _LOGGER = logging.getLogger(__name__)
+# FIXME: while developing
+DEBUG_NCID = True
+if DEBUG_NCID:
+    import sys
+    logging.basicConfig(stream=sys.stdout)
+    _LOGGER.setLevel('DEBUG')
 
 ICON_OFF = 'mdi:phone-hangup'
 ICON_ON = 'mdi:phone-in-talk'
 ICON_INCOMING = 'mdi:phone-incoming'
 ICON_OUTGOING = 'mdi:phone-outgoing'
 
-STATE_UNKNOWN = None
+STATE_UNKNOWN = 'unknown'
 STATE_OFF = "on hook"
 STATE_ON = "in call"
 STATE_IN_PROGRESS_INCOMING = "incoming ringing"
 STATE_IN_PROGRESS_OUTGOING = "outgoing ringing"
+
+NUMBER_OUT_OF_AREA = 'OUT-OF-AREA'
+NUMBER_ANONYMOUS = 'ANONYMOUS'
+NUMBER_PRIVATE = 'PRIVATE'
 
 EVENT_INCOMING_CALL = 'ncid.incoming_call'
 
@@ -68,11 +78,8 @@ class NcidClient(BinarySensorDevice):
         self._last_name = None
         self._last_number = None
         self._state = STATE_UNKNOWN
+        self._is_connected = False
         self.update()
-
-        # FIXME: Use hass.async_add_job ?
-        self._thread = Thread(target = self._run_thread)
-        self._thread.start()
 
     @property
     def icon(self):
@@ -101,73 +108,140 @@ class NcidClient(BinarySensorDevice):
 
     @property
     def state(self):
-        # FIXME: HACK: Just testing...
-        #self._incoming_call('test', '1234')
         """Return the state of this entity."""
         return self._state
 
     @property
     def device_state_attributes(self):
         """Return device specific state attributes."""
-        attr = {}
-        attr[ATTR_NAME] = self._last_name
-        attr[ATTR_NUMBER] = self._last_number
+        attr = {
+            ATTR_NAME: self._last_name,
+            ATTR_NUMBER: self._last_number
+        }
 
         return attr
+
+    def update(self):
+        if not self._is_connected:
+            # If we lost the connection, re-establish it
+            self._is_connected = True
+            self._thread = Thread(target=self._run_thread)
+            self._thread.start()
 
     def _run_thread(self):
         try:
             sock = socket.create_connection((self._host, int(self._port)))
         except ConnectionError as e:
-            _LOGGER.error("Cannot connect to NCID server %s:%s", self._host, self._port)
+            _LOGGER.error("Cannot connect to NCID server {}:{}".format(self._host, self._port))
+            self._is_connected = False
             raise e
         except Exception as e:
-            _LOGGER.error("Cannot connect to NCID server %s:%s", self._host, self._port)
+            _LOGGER.error("Cannot connect to NCID server {}:{}".format(self._host, self._port))
+            self._is_connected = False
             raise e
 
-        # print("CONNECTED")
+        _LOGGER.info("Connected to NCID server {}:{}".format(self._host, self._port))
         for line in sock.makefile():
-            # print("recieved line: {}".format(line))
-            try:
+            if line[:3].isdigit():
                 code = int(line[:3])
-                message = line[3:]
+                message = line[4:]
 
                 self._handle_error(code, message)
-            except:
+            else:
                 attr = self._parse_line(line)
                 self._handle_message(attr)
 
         sock.close()
+        self._is_connected = False
 
     def _handle_error(self, code, message):
-        print("recieved code: {}, msg {}".format(code, message))
+        _LOGGER.debug("NCID recieved status: {} {}".format(code, message))
+
 
     def _handle_message(self, attr):
         from pprint import pprint
 
-        print("handling message: {}".format(attr))
+        _LOGGER.debug("NCID recieved message: {}".format(attr))
         pprint(attr)
-        if attr['CMD'] == 'OUT':
-            try:
-                name = attr['NAME']
-                if name == '-' or name == 'NO NAME':
-                    name = None
-            except:
-                name = None
 
-            try:
-                number = attr['NMBR']
-                # FIXME: copy paste error for name/number
-                if number == '-' or number == 'NO NMBR':
-                    number = None
-            except:
+        # CID OUT HUP (internal hangup) BLK PID WID
+        # END CIDINFO/CANCEL CIDINFO/BYE
+
+        if attr['CMD'] == 'CID' or attr['CMD'] == 'PID':
+            # Sent just ahead of incoming call, including caller ID
+            # PID is same as CID, but used for certain smartphones
+            name, number = self._get_caller_id(attr)
+            self._state = STATE_IN_PROGRESS_INCOMING
+            print (name, number)
+
+        if attr['CMD'] == 'OUT':
+            # Sent when placing an outgoing call, including 'callee' ID
+            name, number = self._get_caller_id(attr)
+            self._state = STATE_IN_PROGRESS_OUTGOING
+            print (name, number)
+
+        if attr['CMD'] == 'CIDINFO':
+            # Send for each "ring" in an incoming call,
+            # and when call is picked up or terminated
+            ring = int(attr['RING'])
+            if ring == 0:
+                # Call was answered
+                self._state = STATE_ON
+            elif ring == -1:
+                # Call stopped ringing due to other end hanging up (CANCEL)
+                self._state = STATE_OFF
+            elif ring == -2:
+                # Call has been terminated due to this side hanging up (BYE)
+                print("call is terminated")
+                self._state = STATE_OFF
+            else:
+                # The incoming call is not answered, ring contains ring count.
+                if self._state != STATE_IN_PROGRESS_INCOMING:
+                    _LOGGER.debug("NCID internal error: CIDINFO RING {} with no call in progress".format(ring))
+                    self._state = STATE_IN_PROGRESS_INCOMING
+
+        if attr['CMD'] == 'END':
+            # Sent after a call is completed
+            name, number = self._get_caller_id(attr)
+            if self._state != STATE_ON:
+                _LOGGER.debug("NCID internal error: END with no prior CIDINFO/-X")
+
+            self._state = STATE_OFF
+            hangup_reason = attr['HTYPE'] # BYE or CANCEL
+            call_direction = attr['CTYPE'] # IN or OUT
+            print (name, number)
+
+        if attr['CMD'] == 'HUP':
+            # Sent when ncid automatically hangs up (e.g. blacklisted) call
+            self._state = STATE_OFF
+            hangup_reason = ''
+            call_direction = attr['CTYPE'] # IN or OUT
+            print (name, number)
+
+        if attr['CMD'] == 'MSG':
+            _LOGGER.info("NCID general message: {}".format(attr['MSG']))
+
+
+    def _get_caller_id(self, attr):
+        try:
+            name = attr['NAME']
+            if name == '-' or name == 'NO NAME':
+                name = None
+        except:
+            name = None
+        try:
+            number = attr['NMBR']
+            if number == '-' or number == 'NO-NUMBER':
                 number = None
+        except:
+            number = None
+
+        return name, number
 
     def _incoming_call(self, name, number):
-        _LOGGER.debug("NCID reports incoming call from %s (%s)", name, number)
+        _LOGGER.info("NCID reports incoming call from {} ({})".format(number, name))
         self._last_name = name
         self._last_number = number
-        self.test_it()
 
         self._hass.bus.fire(EVENT_INCOMING_CALL, {
                 ATTR_NAME: name,
@@ -176,7 +250,11 @@ class NcidClient(BinarySensorDevice):
 
     def _parse_line(self, line):
         cmd, rest = line.split(':', 1)
-        data = rest.strip().strip('*').split('*')
-        attr = dict(zip(*[iter(data)] * 2))
+        if cmd == 'MSG' or cmd == '+MSG':
+            attr = { 'MSG': rest}
+        else:
+            data = rest.strip().strip('*').split('*')
+            attr = dict(zip(*[iter(data)] * 2))
+
         attr['CMD'] = cmd
         return attr

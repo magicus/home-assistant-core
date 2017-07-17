@@ -7,7 +7,6 @@ import unittest
 from homeassistant.components.binary_sensor import ncid
 from homeassistant.setup import setup_component
 import homeassistant.components.binary_sensor as binary_sensor
-from homeassistant.const import (STATE_OFF, STATE_ON, STATE_UNKNOWN)
 
 from tests.common import (
     get_test_home_assistant, assert_setup_component)
@@ -49,7 +48,6 @@ class FakeNCIDServer:
             while not self.server.shutdown_handler:
                 while not self.server.output_queue.empty():
                     line = self.server.output_queue.get()
-                    print("will output {}".format(line))
                     self._send_line(line)
 
     def __init__(self, address):
@@ -75,14 +73,10 @@ class TestNCIDBinarySensor(unittest.TestCase):
         self.hass = get_test_home_assistant()
         self.server = FakeNCIDServer((TEST_HOST, TEST_PORT))
         self.server.start()
+        self.server.send('200 Okey dokey')
         self.server.send('CIDINFO: *LINE*4901*RING*-2*TIME*00:11:01*')
-        self.server.send('200 OK dokey')
         self.server.send('END: *HTYPE*BYE*DATE*01152017*TIME*0011*SCALL*01/15/2017 00:10:47*ECALL*01/15/2017 00:11:01*CTYPE*IN*LINE*4901*NMBR*0123456*NAME*NONAME*')
-
-        output = 'OUT: *DATE*01152017*TIME*0010*LINE*4901*NMBR*012345611*MESG*NONE*NAME*NO NAME*'
-        self.server.send(output + 'CNT*1*')
-        self.server.send(output + 'CNT*2*')
-        self.server.send(output + 'CNT*3*')
+        self.server.send('OUT: *DATE*01152017*TIME*0010*LINE*4901*NMBR*012345611*MESG*NONE*NAME*NO NAME*')
 
     def tearDown(self):  # pylint: disable=invalid-name
         """Stop everything that was started."""
@@ -102,4 +96,16 @@ class TestNCIDBinarySensor(unittest.TestCase):
                 self.hass, binary_sensor.DOMAIN, TEST_CONFIG)
 
         state = self.hass.states.get('binary_sensor.fake_ncid')
-        self.assertEqual(STATE_UNKNOWN, state.state)
+        self.assertEqual(ncid.STATE_UNKNOWN, state.state)
+
+    def test_ring_sensor_value(self):
+        """Test the default sensor value."""
+        with assert_setup_component(1, binary_sensor.DOMAIN):
+            assert setup_component(
+                self.hass, binary_sensor.DOMAIN, TEST_CONFIG)
+
+        state = self.hass.states.get('binary_sensor.fake_ncid')
+        self.assertEqual(ncid.STATE_UNKNOWN, state.state)
+        self.server.send('OUT: *DATE*01152017*TIME*0010*LINE*4901*NMBR*012345611*MESG*NONE*NAME*NO NAME*')
+        self.server.send('200 Okey dokey')
+        # self.assertEqual(ncid.STATE_IN_PROGRESS_OUTGOING, state.state)

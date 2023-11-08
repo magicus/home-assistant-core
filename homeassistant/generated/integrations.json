@@ -4356,6 +4356,12 @@
       "integration_type": "virtual",
       "supported_by": "opower"
     },
+    "pppp": {
+      "name": "PPPP",
+      "integration_type": "hub",
+      "config_flow": true,
+      "iot_class": "local_push"
+    },
     "private_ble_device": {
       "name": "Private BLE Device",
       "integration_type": "hub",

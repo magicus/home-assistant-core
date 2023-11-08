@@ -967,6 +967,8 @@ build.json @home-assistant/supervisor
 /tests/components/poolsense/ @haemishkyd
 /homeassistant/components/powerwall/ @bdraco @jrester @daniel-simpson
 /tests/components/powerwall/ @bdraco @jrester @daniel-simpson
+/homeassistant/components/pppp/ @magicus
+/tests/components/pppp/ @magicus
 /homeassistant/components/private_ble_device/ @Jc2k
 /tests/components/private_ble_device/ @Jc2k
 /homeassistant/components/profiler/ @bdraco

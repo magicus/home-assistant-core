@@ -361,6 +361,7 @@ FLOWS = {
         "point",
         "poolsense",
         "powerwall",
+        "pppp",
         "private_ble_device",
         "profiler",
         "progettihwsw",

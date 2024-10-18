@@ -1,0 +1,11 @@
+{
+  "codeowners": ["owner [@user]: @boralyl"],
+  "config_flow": false,
+  "dependencies": [],
+  "documentation": "https://github.com/boralyl/github-custom-component-tutorial",
+  "domain": "github_custom",
+  "iot_class": "calculated",
+  "name": "Github Custom",
+  "requirements": ["gidgethub[aiohttp]==4.1.1"]
+  "version": "1.0.0"
+}

@@ -972,6 +972,9 @@ georss-qld-bushfire-alert-client==0.8
 # homeassistant.components.upnp
 getmac==0.9.4
 
+# homeassistant.components.github_custom
+gidgethub[aiohttp]==4.1.1
+
 # homeassistant.components.gios
 gios==5.0.0
 

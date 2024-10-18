@@ -194,6 +194,7 @@ build.json @home-assistant/supervisor
 /homeassistant/components/bizkaibus/ @UgaitzEtxebarria
 /homeassistant/components/blebox/ @bbx-a @swistakm
 /tests/components/blebox/ @bbx-a @swistakm
+/homeassistant/components/bleep/ @magicus
 /homeassistant/components/blink/ @fronzbot @mkmer
 /tests/components/blink/ @fronzbot @mkmer
 /homeassistant/components/blue_current/ @Floris272 @gleeuwen
@@ -542,6 +543,7 @@ build.json @home-assistant/supervisor
 /tests/components/gios/ @bieniu
 /homeassistant/components/github/ @timmo001 @ludeeus
 /tests/components/github/ @timmo001 @ludeeus
+/homeassistant/components/github_custom/ @boralyl
 /homeassistant/components/glances/ @engrbm87
 /tests/components/glances/ @engrbm87
 /homeassistant/components/go2rtc/ @home-assistant/core

@@ -41,6 +41,10 @@ BLUETOOTH: Final[list[dict[str, bool | str | int | list[int]]]] = [
         "service_uuid": "0000fce0-0000-1000-8000-00805f9b34fb",
     },
     {
+        "domain": "bleep",
+        "local_name": "JBL*",
+    },
+    {
         "connectable": False,
         "domain": "bluemaestro",
         "manufacturer_id": 307,

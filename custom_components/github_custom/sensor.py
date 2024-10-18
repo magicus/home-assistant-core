@@ -1,16 +1,18 @@
 """GitHub sensor platform."""
+
+from collections.abc import Callable
+from datetime import timedelta
 import logging
 import re
-from datetime import timedelta
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 from urllib import parse
 
-import gidgethub
-import voluptuous as vol
 from aiohttp import ClientError
+import gidgethub
 from gidgethub.aiohttp import GitHubAPI
+import voluptuous as vol
 
-from homeassistant.components.sensor import PLATFORM_SCHEMA
+from homeassistant.components.sensor import PLATFORM_SCHEMA as SENSOR_PLATFORM_SCHEMA
 from homeassistant.const import (
     ATTR_NAME,
     CONF_ACCESS_TOKEN,
@@ -18,14 +20,11 @@ from homeassistant.const import (
     CONF_PATH,
     CONF_URL,
 )
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity import Entity
-from homeassistant.helpers.typing import (
-    ConfigType,
-    DiscoveryInfoType,
-    HomeAssistantType,
-)
+from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from .const import (
     ATTR_CLONES,
@@ -46,7 +45,6 @@ from .const import (
     BASE_API_URL,
 )
 
-
 _LOGGER = logging.getLogger(__name__)
 # Time between updating data from GitHub
 SCAN_INTERVAL = timedelta(minutes=10)
@@ -56,7 +54,7 @@ REPO_SCHEMA = vol.Schema(
     {vol.Required(CONF_PATH): cv.string, vol.Optional(CONF_NAME): cv.string}
 )
 
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
+SENSOR_PLATFORM_SCHEMA = SENSOR_PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_ACCESS_TOKEN): cv.string,
         vol.Required(CONF_REPOS): vol.All(cv.ensure_list, [REPO_SCHEMA]),
@@ -69,7 +67,8 @@ LINK_RE = re.compile(
 )
 
 
-def get_last_page_url(link: Optional[str]) -> Optional[str]:
+def get_last_page_url(link: str | None) -> str | None:
+    """Extract the last page URL from the GitHub API pagination link header."""
     # https://developer.github.com/v3/#pagination
     # https://tools.ietf.org/html/rfc5988
     if link is None:
@@ -78,15 +77,14 @@ def get_last_page_url(link: Optional[str]) -> Optional[str]:
         if match.group("param_type") == "rel":
             if match.group("param_value") == "last":
                 return match.group("uri")
-    else:
-        return None
+    return None
 
 
 async def async_setup_platform(
-    hass: HomeAssistantType,
+    hass: HomeAssistant,
     config: ConfigType,
     async_add_entities: Callable,
-    discovery_info: Optional[DiscoveryInfoType] = None,
+    discovery_info: DiscoveryInfoType | None = None,
 ) -> None:
     """Set up the sensor platform."""
     session = async_get_clientsession(hass)
@@ -98,11 +96,12 @@ async def async_setup_platform(
 class GitHubRepoSensor(Entity):
     """Representation of a GitHub Repo sensor."""
 
-    def __init__(self, github: GitHubAPI, repo: Dict[str, str]):
+    def __init__(self, github: GitHubAPI, repo: dict[str, str]) -> None:
+        """Initialize the sensor."""
         super().__init__()
         self.github = github
         self.repo = repo["path"]
-        self.attrs: Dict[str, Any] = {ATTR_PATH: self.repo}
+        self.attrs: dict[str, Any] = {ATTR_PATH: self.repo}
         self._name = repo.get("name", self.repo)
         self._state = None
         self._available = True
@@ -123,14 +122,17 @@ class GitHubRepoSensor(Entity):
         return self._available
 
     @property
-    def state(self) -> Optional[str]:
+    def state(self) -> str | None:
+        """Return the state of the sensor."""
         return self._state
 
     @property
-    def device_state_attributes(self) -> Dict[str, Any]:
+    def device_state_attributes(self) -> dict[str, Any]:
+        """Return the state attributes."""
         return self.attrs
 
     async def async_update(self):
+        """Update the sensor."""
         try:
             repo_url = f"/repos/{self.repo}"
             repo_data = await self.github.getitem(repo_url)
@@ -189,21 +191,14 @@ class GitHubRepoSensor(Entity):
             self._available = True
         except (ClientError, gidgethub.GitHubException):
             self._available = False
-            _LOGGER.exception("Error retrieving data from GitHub.")
+            _LOGGER.exception("Error retrieving data from GitHub")
 
     async def _get_total(self, url: str) -> int:
-        """Get the total number of results for a GitHub resource URL.
-
-        GitHub's API doesn't provide a total count for paginated resources.  To get
-        around that and to not have to request every page, we do a single request
-        requesting 1 item per page.  Then we get the url for the last page in the
-        response headers and parse the page number from there.  This page number is
-        the total number of results.
-        """
+        """Get the total number of results for a GitHub resource URL."""
         api_url = f"{BASE_API_URL}{url}"
         params = {"per_page": 1, "state": "open"}
         headers = {"Authorization": self.github.oauth_token}
-        async with self.github._session.get(
+        async with self.github.get_session.get(
             api_url, params=params, headers=headers
         ) as resp:
             last_page_url = get_last_page_url(resp.headers.get("Link"))

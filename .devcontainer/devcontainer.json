@@ -16,8 +16,10 @@
     "-e",
     "GIT_EDITOR=code --wait",
     "--security-opt",
-    "label=disable"
+    "label=disable",
+    "--privileged"
   ],
+  "mounts": ["type=bind,source=/run/dbus,target=/run/dbus,readonly"],
   "customizations": {
     "vscode": {
       "extensions": [

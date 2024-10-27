@@ -218,8 +218,12 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="bluetooth_confirm",
-            data_schema=vol.Schema({vol.Required("input_parameter"): str}),
+            description_placeholders=self.context["title_placeholders"],
         )
+        # return self.async_show_form(
+        #     step_id="bluetooth_confirm",
+        #     data_schema=vol.Schema({vol.Required("input_parameter"): str}),
+        # )
 
     #        self._set_confirm_only()
     # return self.async_show_form(

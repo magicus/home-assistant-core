@@ -3,7 +3,7 @@
   "name": "HA bleep2 (BLE ePaper)",
   "bluetooth": [
     {
-      "connectable": false,
+      "connectable": true,
       "service_uuid": "0000fef0-0000-1000-8000-00805f9b34fb"
     }
   ],

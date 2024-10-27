@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import dataclasses
+import logging
 from typing import Any
 
 from bluetooth_sensor_state_data import BluetoothData
@@ -11,18 +12,16 @@ import voluptuous as vol
 
 from homeassistant.components import onboarding
 from homeassistant.components.bluetooth import (
-    BluetoothScanningMode,
     BluetoothServiceInfo,
     async_discovered_service_info,
-    async_process_advertisements,
 )
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_ADDRESS
 
 from .const import DOMAIN
 
-# How long to wait for additional advertisement packets if we don't have the right ones
-ADDITIONAL_DISCOVERY_TIMEOUT = 60
+# Create a logger for your component
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass
@@ -48,7 +47,6 @@ class DeviceData(BluetoothData):
         super().__init__()
         self.encryption_scheme = None
         self.bindkey_verified = False
-        self.pending = True
         self.last_service_info = None
 
     def supported(self, data: BluetoothServiceInfo) -> bool:
@@ -70,11 +68,6 @@ class DeviceData(BluetoothData):
             return self.last_service_info.name
         return ""
 
-    def _start_update(self, data: BluetoothServiceInfo) -> None:
-        """Update from BLE advertisement data."""
-
-    #  self.pending = False
-
 
 class ConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Xiaomi Bluetooth."""
@@ -88,29 +81,35 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
         self._discovered_devices: dict[str, Discovery] = {}
         self._rawtype = 0
 
-    async def _async_wait_for_full_advertisement(
-        self, discovery_info: BluetoothServiceInfo, device: DeviceData
-    ) -> BluetoothServiceInfo:
-        """Sometimes first advertisement we receive is blank or incomplete.
+    def decode_types(self, format_raw) -> Mapping[str, Any]:
+        """Decode the raw format data into a dictionary of display properties."""
+        # Extract the first and last bytes
+        first_byte = format_raw[0]
+        last_byte = format_raw[4]
 
-        Wait until we get a useful one.
-        """
-        if not device.pending:
-            return discovery_info
+        # Create a 16-bit word with the last byte first (reverse order)
+        raw_type = (last_byte << 8) | first_byte
 
-        def _process_more_advertisements(
-            service_info: BluetoothServiceInfo,
-        ) -> bool:
-            device.update(service_info)
-            return not device.pending
+        screen_resolution = (raw_type >> 5) & 63  # r
+        disp_ptype = (raw_type >> 3) & 3  # t
+        avail_colors = ((raw_type >> 1) & 3) + ((raw_type >> 10) & 12)  # c and C
+        single_double_mirror = raw_type & 1  # m
+        can_do_compression = 0 if (raw_type & 0x4000) else 1  # x
 
-        return await async_process_advertisements(
-            self.hass,
-            _process_more_advertisements,
-            {"address": discovery_info.address},
-            BluetoothScanningMode.ACTIVE,
-            ADDITIONAL_DISCOVERY_TIMEOUT,
-        )
+        # Use Home Assistant logging instead of print
+        _LOGGER.warning(f"Display Resolution: {screen_resolution}")
+        _LOGGER.warning(f"Display Type: {disp_ptype}")
+        _LOGGER.warning(f"Display Colors: {avail_colors}")
+        _LOGGER.warning(f"Display Mirror: {single_double_mirror}")
+        _LOGGER.warning(f"Display Compression: {can_do_compression}")
+
+        return {
+            "screen_resolution": screen_resolution,
+            "display_type": disp_ptype,
+            "available_colors": avail_colors,
+            "mirror": single_double_mirror,
+            "compression": can_do_compression,
+        }
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfo
@@ -119,20 +118,25 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
         data = discovery_info.advertisement.manufacturer_data
-        # 20563 = b'3\x1d\x81\x01@'
-        format_raw = data[0x5053]
-        val1 = format_raw[0]  # 51 or 0x33
-        val2 = format_raw[1]  # 29 or 0x1d
-        val3 = format_raw[2]  # 129 or 0x81
-        val4 = format_raw[3]  # 1 or 0x01
-        self._rawtype = val3 * 256 + val4 + 0x10000 * val1 + 0x100 * val2
-        # Type is first and last byte of advertising data, example: A01E810140 = 40A0
-        # Raw type 0030 = 296x128 BW
-        # Raw type 0032 = 296x128 BWR
-        # Raw type 0129 = 800x480 BW
-        # Raw type 012B = 800x480 BWR
 
-        # Raw type 0133 is apparntly my type, 296x128 BWR
+        # Check if the key 0x5053 is present in manufacturer_data
+        if 0x5053 in data:
+            format_raw = data[0x5053]
+
+            # Ensure it contains exactly five bytes
+            if len(format_raw) == 5:
+                # Log the entire 5 bytes as a hex string
+                _LOGGER.warning(f"Manufacturer data (hex): {format_raw.hex()}")
+
+                # Decode the 16-bit word using decode_types function
+                decoded_values = self.decode_types(format_raw)
+
+            else:
+                _LOGGER.warning("Manufacturer data for key 0x5053 is not five bytes")
+        else:
+            _LOGGER.warning("Manufacturer data key 0x5053 is missing")
+
+
 
         device = DeviceData()
         if not device.supported(discovery_info):
@@ -143,87 +147,7 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
 
         self._discovered_device = device
 
-        # Wait until we have received enough information about
-        # this device to detect its encryption type
-        try:
-            self._discovery_info = await self._async_wait_for_full_advertisement(
-                discovery_info, device
-            )
-        except TimeoutError:
-            # This device might have a really long advertising interval
-            # So create a config entry for it, and if we discover it has
-            # encryption later, we can do a reauth
-            return await self.async_step_confirm_slow()
-
         return await self.async_step_bluetooth_confirm()
-
-    async def async_step_get_encryption_key_legacy(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Enter a legacy bindkey for a v2/v3 MiBeacon device."""
-        assert self._discovery_info
-        assert self._discovered_device
-
-        errors = {}
-
-        if user_input is not None:
-            bindkey = user_input["bindkey"]
-
-            if len(bindkey) != 24:
-                errors["bindkey"] = "expected_24_characters"
-            else:
-                self._discovered_device.set_bindkey(bytes.fromhex(bindkey))
-
-                # If we got this far we already know supported will
-                # return true so we don't bother checking that again
-                # We just want to retry the decryption
-                self._discovered_device.supported(self._discovery_info)
-
-                if self._discovered_device.bindkey_verified:
-                    return self._async_get_or_create_entry(bindkey)
-
-                errors["bindkey"] = "decryption_failed"
-
-        return self.async_show_form(
-            step_id="get_encryption_key_legacy",
-            description_placeholders=self.context["title_placeholders"],
-            data_schema=vol.Schema({vol.Required("bindkey"): vol.All(str, vol.Strip)}),
-            errors=errors,
-        )
-
-    async def async_step_get_encryption_key_4_5(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Enter a bindkey for a v4/v5 MiBeacon device."""
-        assert self._discovery_info
-        assert self._discovered_device
-
-        errors = {}
-
-        if user_input is not None:
-            bindkey = user_input["bindkey"]
-
-            if len(bindkey) != 32:
-                errors["bindkey"] = "expected_32_characters"
-            else:
-                self._discovered_device.set_bindkey(bytes.fromhex(bindkey))
-
-                # If we got this far we already know supported will
-                # return true so we don't bother checking that again
-                # We just want to retry the decryption
-                self._discovered_device.supported(self._discovery_info)
-
-                if self._discovered_device.bindkey_verified:
-                    return self._async_get_or_create_entry(bindkey)
-
-                errors["bindkey"] = "decryption_failed"
-
-        return self.async_show_form(
-            step_id="get_encryption_key_4_5",
-            description_placeholders=self.context["title_placeholders"],
-            data_schema=vol.Schema({vol.Required("bindkey"): vol.All(str, vol.Strip)}),
-            errors=errors,
-        )
 
     async def async_step_bluetooth_confirm(
         self, user_input: dict[str, Any] | None = None
@@ -234,6 +158,7 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
 
         # our_name = self.context["title_placeholders"]
 
+        self._set_confirm_only()
         return self.async_show_form(
             step_id="bluetooth_confirm",
             description_placeholders=self.context["title_placeholders"],
@@ -249,19 +174,6 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
     #     description_placeholders=self.context["title_placeholders"],
     # )
 
-    async def async_step_confirm_slow(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Ack that device is slow."""
-        if user_input is not None:
-            return self._async_get_or_create_entry()
-
-        self._set_confirm_only()
-        return self.async_show_form(
-            step_id="confirm_slow",
-            description_placeholders=self.context["title_placeholders"],
-        )
-
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -273,18 +185,6 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
             discovery = self._discovered_devices[address]
 
             self.context["title_placeholders"] = {"name": discovery.title}
-
-            # Wait until we have received enough information about
-            # this device to detect its encryption type
-            try:
-                self._discovery_info = await self._async_wait_for_full_advertisement(
-                    discovery.discovery_info, discovery.device
-                )
-            except TimeoutError:
-                # This device might have a really long advertising interval
-                # So create a config entry for it, and if we discover
-                # it has encryption later, we can do a reauth
-                return await self.async_step_confirm_slow()
 
             self._discovered_device = discovery.device
 
@@ -314,21 +214,6 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema({vol.Required(CONF_ADDRESS): vol.In(titles)}),
         )
-
-    async def async_step_reauth(
-        self, entry_data: Mapping[str, Any]
-    ) -> ConfigFlowResult:
-        """Handle a flow initialized by a reauth event."""
-        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
-        assert entry is not None
-
-        device: DeviceData = entry_data["device"]
-        self._discovered_device = device
-
-        self._discovery_info = device.last_service_info
-
-        # Otherwise there wasn't actually encryption so abort
-        return self.async_abort(reason="reauth_successful")
 
     def _async_get_or_create_entry(
         self, bindkey: str | None = None

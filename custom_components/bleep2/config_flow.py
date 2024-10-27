@@ -54,7 +54,7 @@ class DeviceData(BluetoothData):
     def supported(self, data: BluetoothServiceInfo) -> bool:
         """Check if device is supported."""
         if not super().supported(data):
-            return False
+            return True
         return True
 
     def supported2(self, service_info: BluetoothServiceInfo) -> bool:
@@ -66,7 +66,7 @@ class DeviceData(BluetoothData):
 
     def get_device_name(self) -> str:
         """Get the device name."""
-        if self.last_service_info.name:
+        if self.last_service_info and self.last_service_info.name:
             return self.last_service_info.name
         return ""
 
@@ -213,6 +213,8 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
         """Confirm discovery."""
         if user_input is not None or not onboarding.async_is_onboarded(self.hass):
             return self._async_get_or_create_entry()
+
+        # our_name = self.context["title_placeholders"]
 
         return self.async_show_form(
             step_id="bluetooth_confirm",

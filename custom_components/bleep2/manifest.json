@@ -1,0 +1,17 @@
+{
+  "domain": "bleep2",
+  "name": "HA bleep2 (BLE ePaper)",
+  "bluetooth": [
+    {
+      "connectable": false,
+      "service_uuid": "0000fef0-0000-1000-8000-00805f9b34fb"
+    }
+  ],
+  "codeowners": ["@magicus"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/magicus/ha-bleep/",
+  "iot_class": "calculated",
+  "requirements": ["xiaomi-ble==0.32.0"],
+  "version": "0.1.0"
+}

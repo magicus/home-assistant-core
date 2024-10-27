@@ -7,6 +7,10 @@
     {
       "name": "Home Assistant",
       "type": "debugpy",
+      "variablePresentation": {
+       "function": "hide",
+      "special": "hide",
+      },
       "request": "launch",
       "module": "homeassistant",
       "justMyCode": false,

@@ -72,7 +72,8 @@ class DeviceData(BluetoothData):
 
     def _start_update(self, data: BluetoothServiceInfo) -> None:
         """Update from BLE advertisement data."""
-        self.pending = False
+
+    #  self.pending = False
 
 
 class ConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -85,6 +86,7 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
         self._discovery_info: BluetoothServiceInfo | None = None
         self._discovered_device: DeviceData | None = None
         self._discovered_devices: dict[str, Discovery] = {}
+        self._rawtype = 0
 
     async def _async_wait_for_full_advertisement(
         self, discovery_info: BluetoothServiceInfo, device: DeviceData
@@ -116,6 +118,22 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle the bluetooth discovery step."""
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
+        data = discovery_info.advertisement.manufacturer_data
+        # 20563 = b'3\x1d\x81\x01@'
+        format_raw = data[0x5053]
+        val1 = format_raw[0]  # 51 or 0x33
+        val2 = format_raw[1]  # 29 or 0x1d
+        val3 = format_raw[2]  # 129 or 0x81
+        val4 = format_raw[3]  # 1 or 0x01
+        self._rawtype = val3 * 256 + val4 + 0x10000 * val1 + 0x100 * val2
+        # Type is first and last byte of advertising data, example: A01E810140 = 40A0
+        # Raw type 0030 = 296x128 BW
+        # Raw type 0032 = 296x128 BWR
+        # Raw type 0129 = 800x480 BW
+        # Raw type 012B = 800x480 BWR
+
+        # Raw type 0133 is apparntly my type, 296x128 BWR
+
         device = DeviceData()
         if not device.supported(discovery_info):
             return self.async_abort(reason="not_supported")

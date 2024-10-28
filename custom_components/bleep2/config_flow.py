@@ -20,8 +20,36 @@ from homeassistant.const import CONF_ADDRESS
 
 from .const import DOMAIN
 
+import voluptuous as vol
+from homeassistant import config_entries
+from homeassistant.core import callback
+
+
 # Create a logger for your component
 _LOGGER = logging.getLogger(__name__)
+
+# Predefined screen resolution options and colors
+PREDEFINED_RESOLUTIONS = [128, 256, 400, 800]
+
+SCREEN_RESOLUTIONS = [
+    "196x96",
+    "212x104",
+    "250x122",
+    "250x132",
+    "280x480",
+    "296x128",
+    "400x300",
+    "640x384",
+    "640x480",
+    "800x480",
+    "960x640",
+]
+COLOR_OPTIONS = {
+    "bw": "Black and White",
+    "bwr": "Black, White and Red",
+    "bwy": "Black, White and Yellow",
+    "bwry": "Black, White, Red and Yellow",
+}
 
 
 @dataclasses.dataclass
@@ -136,18 +164,56 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
         else:
             _LOGGER.warning("Manufacturer data key 0x5053 is missing")
 
-
-
         device = DeviceData()
         if not device.supported(discovery_info):
             return self.async_abort(reason="not_supported")
 
         title = _title(discovery_info, device)
-        self.context["title_placeholders"] = {"name": title}
+        self.context["title_placeholders"] = {
+            "name": title,
+            "address": discovery_info.address,
+        }
 
         self._discovered_device = device
 
-        return await self.async_step_bluetooth_confirm()
+        return await self.async_step_user2()
+        # return await self.async_step_bluetooth_confirm()
+
+    async def async_step_user2(self, user_input=None):
+        """Handle the initial step for configuring the device."""
+        if user_input is not None:
+            # Process the user input here, or move to another step if needed
+            return self.async_create_entry(
+                title="Device Configuration", data=user_input
+            )
+
+        # Sample data for demonstration (replace with actual data from your advertisement)
+        device_data = {
+            "res": "800x480",
+            "color": "bw",
+            "mirror": False,
+            "compression": True,
+        }
+
+        # Define schema with restricted choices for width and height
+        schema = vol.Schema(
+            {
+                vol.Required("res", default=device_data["res"]): vol.In(
+                    SCREEN_RESOLUTIONS
+                ),
+                vol.Optional("color", default=device_data["color"]): vol.In(
+                    COLOR_OPTIONS
+                ),
+                vol.Optional("mirror", default=device_data["mirror"]): bool,
+                vol.Optional("compression", default=device_data["compression"]): bool,
+            }
+        )
+
+        return self.async_show_form(
+            step_id="user2",
+            data_schema=schema,
+            description_placeholders=self.context["title_placeholders"],
+        )
 
     async def async_step_bluetooth_confirm(
         self, user_input: dict[str, Any] | None = None

@@ -235,3 +235,16 @@ Display Compression: 0 ATC_GICISKY_Paper_Image_Upload.html:351:21
             <option value="012B">800x480 BWR</option>
             <option value="Not Added">280x480 BW</option>
             <option value="Not Added">280x480 BWR</option>
+
+
+196x96
+212x104
+250x122
+250x132
+280x480
+296x128
+400x300
+640x384
+640x480
+800x480
+960x640

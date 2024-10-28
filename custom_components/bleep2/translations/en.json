@@ -14,7 +14,17 @@
     "flow_title": "{name}",
     "step": {
       "bluetooth_confirm": {
-        "description": "Do you want to set up {name}?"
+        "description": "Do you want to set up {name} ({address})?"
+      },
+      "user2": {
+        "title": "Add BLE ePaper device {name}",
+        "description": "Configure BLE ePaper device {name} ({address}).\n\nThe following values have been automatically determined. Only change them if you know they are incorrect.",
+          "data": {
+            "res": "Screen resolution",
+            "color": "Supported colors",
+            "mirror": "Mirror display",
+            "compression": "Supports compression"
+        }
       },
       "confirm_slow": {
         "description": "There hasn't been a broadcast from this device in the last minute so we aren't sure if this device uses encryption or not. This may be because the device uses a slow broadcast interval. Confirm to add this device anyway, then the next time a broadcast is received you will be prompted to enter its bindkey if it's needed."
